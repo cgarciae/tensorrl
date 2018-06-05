@@ -24,7 +24,8 @@ class DQN(object):
         max_steps = 10000, 
         policy = krl.policy.EpsGreedyQPolicy(), 
         memory = krl.memory.SequentialMemory(), 
-        target_model_update = 10000):
+        target_model_update = 10000,
+        gamma = 0.99):
 
         
 
@@ -32,7 +33,8 @@ class DQN(object):
 
             inputs = input_fn()
 
-            state0, reward, done, state1 = 
+            keys = ["state0", "reward", "done", "action", "state1"]
+            state0, reward, done, action, state1 = [ inputs[x] for x in keys ]
 
             global_step = tf.train.get_or_create_global_step()
             update_global_step = global_step.assign_add(1)
@@ -42,15 +44,35 @@ class DQN(object):
             
 
             with tf.variable_scope("Model") as model_scope:
-                model = self.model_fn(inputs, tf.estimator.ModeKeys.TRAIN, self.params)
+                model_q_values = self.model_fn(inputs, tf.estimator.ModeKeys.TRAIN, self.params)
                 model_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=model_scope)
 
             with tf.variable_scope("TargetModel") as target_scope:
-                target_model = self.model_fn(inputs, tf.estimator.ModeKeys.PREDICT, self.params)
+                target_q_values = self.model_fn(inputs, tf.estimator.ModeKeys.PREDICT, self.params)
                 target_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=target_scope)
 
             
+            target_values = tf.where(
+                done,
+                reward,
+                reward + gamma * tf.reduce_max(target_q_values, axis=1)
+            )
 
+            model_action_values = utils.select_columns(model_q_values, actions)
+            error = target_values - model_action_values
+
+            tf.losses.huber_loss(target_values, model_action_values)
+
+            loss = tf.losses.get_total_loss()
+
+            optimizer = tf.train.AdamOptimizer()
+            
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                train_op = optimizer.minimize(loss)
+
+            
+
+            
             
             # end model_fn
             #####################
