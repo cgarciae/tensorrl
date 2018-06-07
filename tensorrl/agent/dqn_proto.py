@@ -33,11 +33,7 @@ class DQN(object):
 
             inputs = input_fn()
 
-            keys = ["state0", "reward", "done", "action", "state1"]
-            state0, reward, done, action, state1 = [ inputs[x] for x in keys ]
-
-            global_step = tf.train.get_or_create_global_step()
-            update_global_step = global_step.assign_add(1)
+            tf.train.get_or_create_global_step()
 
             #####################
             # start model_fn
@@ -68,7 +64,7 @@ class DQN(object):
             optimizer = tf.train.AdamOptimizer()
             
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                train_op = optimizer.minimize(loss)
+                train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
             
 
@@ -76,6 +72,15 @@ class DQN(object):
             
             # end model_fn
             #####################
+
+            #####################
+            # train stuff
+
+            tf.summary.scalar("loss", loss)
+            
+
+
+            train_summaries = tf.summary.merge_all()
 
 
             maybe_update_target = tf.cond(
@@ -88,7 +93,32 @@ class DQN(object):
                 lambda: tf.no_op(),
             )
 
+            final_train_op = tf.group(
+                train_op,
+                maybe_update_target,
+            )
+
             
+            # train stuff
+            #####################
+
+            #####################
+            # step stuff
+
+            keys = ["state0", "reward", "done", "action", "state1"]
+            state0_tensor, reward_tensor, done_tensor, action_tensor, state1_tensor = [ inputs[x] for x in keys ]
+
+            episode_length_tensor = tf.placeholder(tf.int32, name="episode_length")
+            episode_reward_tensor = tf.placeholder(tf.int32, name="episode_reward")
+
+            episode_length_summary = tf.summary.scalar("episode_length", episode_length_tensor)
+            episode_reward_summary = tf.summary.scalar("episode_reward", episode_reward_tensor)
+
+            
+
+
+            # step stuff
+            #####################
 
 
 
