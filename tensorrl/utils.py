@@ -17,3 +17,27 @@ def initialize_or_restore(sess, model_dir):
 def select_columns(tensor, indexes):
     idx = tf.stack((tf.range(tf.shape(indexes)[0]), indexes), 1)
     return tf.gather_nd(tensor, idx)
+
+
+def episode_mean(value, done, name = None):
+
+    with tf.variable_scope(name, default_name="EpisodeMean"):
+
+        total = tf.get_variable("total", shape=[], dtype=tf.float32)
+        count = tf.get_variable("total", shape=[], dtype=tf.int32)
+
+        ep_mean = total / count
+
+        update = tf.cond(
+            done,
+            lambda: tf.group(
+                count.assign(0),
+                total.assign(0.0),
+            ),
+            lambda: tf.group(
+                count.assign_add(1),
+                total.assign_add(value),
+            ),
+        )
+
+        return ep_mean, update

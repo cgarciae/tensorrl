@@ -1,0 +1,7 @@
+eps: 0.1
+memory-limit: 100000
+target-model_update: 10000
+gamma: 0.99
+warmup-steps: 1000
+batch-size: 64
+summary-steps: 100

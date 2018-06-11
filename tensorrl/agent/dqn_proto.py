@@ -22,12 +22,15 @@ class DQN(object):
     def train(
         self, env, input_fn, 
         max_steps = 10000, 
-        policy = krl.policy.EpsGreedyQPolicy(), 
-        memory = krl.memory.SequentialMemory(), 
+        policy = krl.policy.EpsGreedyQPolicy(),
+        memory = krl.memory.SequentialMemory(limit = 1000),
         target_model_update = 10000,
-        gamma = 0.99):
+        gamma = 0.99,
+        warmup_steps = None,
+        batch_size = 64,
+        summary_steps = 100):
 
-        
+        min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
 
         with tf.Graph().as_default() as graph:
 
@@ -49,13 +52,12 @@ class DQN(object):
 
             
             target_values = tf.where(
-                done,
-                reward,
-                reward + gamma * tf.reduce_max(target_q_values, axis=1)
+                inputs["terminal"],
+                inputs["reward"],
+                inputs["reward"] + gamma * tf.reduce_max(target_q_values, axis=1)
             )
 
-            model_action_values = utils.select_columns(model_q_values, actions)
-            error = target_values - model_action_values
+            model_action_values = utils.select_columns(model_q_values, inputs["actions"])
 
             tf.losses.huber_loss(target_values, model_action_values)
 
@@ -66,9 +68,8 @@ class DQN(object):
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
-            
 
-            
+            tf.summary.scalar("target", tf.reduce_mean(target_values))
             
             # end model_fn
             #####################
@@ -77,7 +78,7 @@ class DQN(object):
             # train stuff
 
             tf.summary.scalar("loss", loss)
-            
+
 
 
             train_summaries = tf.summary.merge_all()
@@ -85,8 +86,8 @@ class DQN(object):
 
             maybe_update_target = tf.cond(
                 # global_step % target_model_update == 0
-                tf.equals(
-                    tf.mod(global_step, target_model_update), 
+                tf.equal(
+                    tf.mod(tf.train.get_global_step(), target_model_update), 
                     0,
                 ),
                 lambda: update_target_weights(target_variables, model_variables),
@@ -103,40 +104,103 @@ class DQN(object):
             #####################
 
             #####################
-            # step stuff
+            # unautomated episode stuff
 
-            keys = ["state0", "reward", "done", "action", "state1"]
-            state0_tensor, reward_tensor, done_tensor, action_tensor, state1_tensor = [ inputs[x] for x in keys ]
+            
+            
+            # unautomated stuff
+            #####################
 
-            episode_length_tensor = tf.placeholder(tf.int32, name="episode_length")
-            episode_reward_tensor = tf.placeholder(tf.int32, name="episode_reward")
-
-            episode_length_summary = tf.summary.scalar("episode_length", episode_length_tensor)
-            episode_reward_summary = tf.summary.scalar("episode_reward", episode_reward_tensor)
+            #####################
+            # episode stuff
 
             
 
+            episode_length_t = tf.placeholder(tf.int32, name="episode_length")
+            episode_reward_t = tf.placeholder(tf.int32, name="episode_reward")
 
-            # step stuff
+            episode_length_summary = tf.summary.scalar("episode_length", episode_length_t)
+            episode_reward_summary = tf.summary.scalar("episode_reward", episode_reward_t)
+            
+            
+            final_episode_op = tf.group()
+            episode_summaries = tf.summary.merge([
+                episode_length_summary,
+                episode_reward_summary
+            ])
+
+
+            # episode stuff
             #####################
 
-
+            state0_t, reward_t, terminal_t, action_t, state1_t = [ inputs[x] for x in ["state0", "reward", "terminal", "action", "state1"] ]
 
 
         graph.finalize()
+
+        writer = tf.summary.FileWriter(self.model_dir)
 
         with tf.Session(graph = graph) as sess:
             
             utils.initialize_or_restore(sess, self.model_dir)
 
-            current_step = sess.run(global_step)
+            current_step = sess.run(tf.train.get_global_step())
 
             state0 = env.reset()
 
             for step in range(current_step, max_steps):
-
                 
+                step_feed = {
+                    state0_t : [state0]
+                }
+
+                predictions, _ = sess.run([model_q_values, maybe_update_target], step_feed)
+
+                action = policy.select_action(predictions[0])
+
+                state1, reward, terminal, _info = env.step(action)
+
+                memory.append(state0, action, reward, terminal)
+
+                if memory.nb_entries >= min_memory:
+                    experiences = memory.sample(batch_size)
+                    experiences = [ list(x) for x in zip(*experiences) ]
+
+                    state0_a, action_a, reward_a, state1_a, terminal_a = experiences
+
+                    train_feed = {
+                        state0_t : state0_a,
+                        action_t : action_a,
+                        reward_t : reward_a,
+                        state1_t : state1_a,
+                        terminal_t : terminal_a,
+                    }
+
+                    train_fetches = dict(
+                        train_op = final_train_op,
+                    )
+
+                    if terminal:
+                        train_fetches["episode_op"] = final_episode_op
+                        train_fetches["episode_summaries"] = episode_summaries
+
+                    if step % summary_steps == 0:
+                        train_fetches["train_summaries"] = train_summaries
+
+                    # do training
+                    results = sess.run(train_fetches, train_feed)
+
+                    if "train_summaries" in results:
+                        writer.add_summary(
+                            results["train_summaries"],
+                            step,
+                        )
+
+                    if "episode_summaries" in results:
+                        writer.add_summary(
+                            results["episode_summaries"],
+                            step,
+                        )
 
 
-            
-
+                state0 = state1
