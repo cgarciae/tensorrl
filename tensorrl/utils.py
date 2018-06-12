@@ -14,9 +14,18 @@ def initialize_or_restore(sess, model_dir, global_variables_initializer):
         saver.restore(sess, checkpoint_path)
 
 
-def select_columns(tensor, indexes):
-    idx = tf.stack((tf.range(tf.shape(indexes)[0]), indexes), 1)
-    return tf.gather_nd(tensor, idx)
+def select_columns(tensor, indices):
+    # idx = tf.stack((tf.range(tf.shape(indices)[0]), indices), 1)
+    # return tf.gather_nd(tensor, idx)
+
+    # prepare row indices
+    row_indices = tf.range(tf.shape(indices)[0])
+
+    # zip row indices with column indices
+    full_indices = tf.stack([row_indices, indices], axis=1)
+
+    # retrieve values by indices
+    return tf.gather_nd(tensor, full_indices)
 
 
 def episode_mean(value, done, name = None):
