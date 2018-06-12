@@ -20,8 +20,8 @@ def model_fn(inputs, mode, params):
 
     net = tf.layers.flatten(net)
 
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 64, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 32, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 2, use_bias=False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
 
@@ -53,6 +53,8 @@ def main(model_dir, visualize, **params):
     print(params)
 
     env = gym.make('CartPole-v1')
+    env._max_episode_steps = 2000
+
     env = trl.envs.TimeExpanded(env, 3)
 
     np.random.seed(123)
