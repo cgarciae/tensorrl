@@ -55,7 +55,7 @@ def main(model_dir, visualize, **params):
     env = gym.make('CartPole-v1')
     env._max_episode_steps = 2000
 
-    env = trl.envs.TimeExpanded(env, 3)
+    env = trl.env.TimeExpanded(env, 3)
 
     np.random.seed(123)
     env.seed(123)
