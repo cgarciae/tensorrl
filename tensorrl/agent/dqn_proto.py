@@ -88,7 +88,7 @@ class DQN(object):
             model_action_values = utils.select_columns(model_q_values, inputs["action"])
             
 
-            tf.losses.huber_loss(target_values, model_action_values)
+            tf.losses.mean_squared_error(target_values, model_action_values)
             # loss = tf.reduce_mean(loss)
 
             loss = tf.losses.get_total_loss()
