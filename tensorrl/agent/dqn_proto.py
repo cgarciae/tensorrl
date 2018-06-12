@@ -49,6 +49,8 @@ class DQN(object):
 
             inputs = input_fn()
 
+            print(inputs)
+
             tf.train.get_or_create_global_step()
 
             #####################
@@ -75,7 +77,12 @@ class DQN(object):
 
             
             not_terminal = 1.0 - tf.cast(inputs["terminal"], tf.float32)
-            target_values = inputs["reward"] + gamma * tf.reduce_max(target_q_values, axis=1) * not_terminal
+            action_values = tf.reduce_max(target_q_values, axis=1)
+            target_values = inputs["reward"] + gamma * action_values * not_terminal
+
+            
+            assert action_values.get_shape().as_list() == inputs["reward"].get_shape().as_list()
+            assert action_values.get_shape().as_list() == not_terminal.get_shape().as_list()
             
 
             model_action_values = utils.select_columns(model_q_values, inputs["action"])
@@ -86,7 +93,7 @@ class DQN(object):
 
             loss = tf.losses.get_total_loss()
 
-            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.params.learning_rate)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.params.learning_rate)
             
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 train_op = optimizer.minimize(
@@ -133,14 +140,6 @@ class DQN(object):
 
             
             # train stuff
-            #####################
-
-            #####################
-            # unautomated episode stuff
-
-            
-            
-            # unautomated stuff
             #####################
 
             #####################
@@ -191,9 +190,9 @@ class DQN(object):
                     state0_t : [state0]
                 }
 
-                predictions, _ = sess.run([predict_q_values, update_target_op], step_feed)
+                predictions = sess.run(predict_q_values, step_feed)
 
-                action = policy.select_action(predictions[0])
+                action = policy.select_action(q_values = predictions[0])
 
                 state1, reward, terminal, _info = env.step(action)
 
