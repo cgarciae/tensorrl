@@ -1,3 +1,5 @@
+import numpy as np
+
 
 class TimeExpanded(object):
 
@@ -14,6 +16,7 @@ class TimeExpanded(object):
         return self.state
 
     def step(self, *args, **kwargs):
+        self.state = self.state.copy()
 
         new_state, reward, done, info = self.env.step(*args, **kwargs)
 
@@ -42,6 +45,7 @@ class Physics(object):
         return self.state
 
     def step(self, *args, **kwargs):
+        self.state = self.state.copy()
 
         new_state, reward, done, info = self.env.step(*args, **kwargs)
         old_state = self.state[..., 0]
