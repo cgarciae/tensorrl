@@ -29,7 +29,7 @@ def model_fn(inputs, mode, params):
 
 def input_fn(env):
     state_shape = list(env.env.observation_space.shape)
-    # state_shape += [env.window]
+    state_shape += [env.window]
 
     print("STATE SHAPE")
     print(state_shape)
@@ -53,7 +53,7 @@ def main(model_dir, visualize, **params):
     print(params)
 
     env = gym.make('CartPole-v1')
-    # env = Physics(env)
+    env = trl.envs.TimeExpanded(env, 3)
 
     np.random.seed(123)
     env.seed(123)
