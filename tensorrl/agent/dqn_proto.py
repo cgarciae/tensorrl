@@ -4,13 +4,19 @@ from tensorrl import utils
 from rl.policy import EpsGreedyQPolicy
 from rl.memory import SequentialMemory
 
-def update_target_weights(target_variables, model_variables, target_model_update):
-
-    hard_update = target_model_update >= 1
+def update_target_weights_hard(target_variables, model_variables):
 
     updates = [ 
-        target.assign(current) if hard_update else
-        target.assign_add(target_model_update * (current - target))
+        target.assign(current)
+        for target, current in zip(target_variables, model_variables) 
+    ]
+
+    return tf.group(*updates)
+
+def update_target_weights_soft(target_variables, model_variables, beta):
+
+    updates = [ 
+        target.assign_add(beta * (current - target))
         for target, current in zip(target_variables, model_variables) 
     ]
 
@@ -50,26 +56,26 @@ class DQN(object):
             
 
             with tf.variable_scope("Model") as model_scope:
-                model_inputs = dict(state0 = inputs["state0"])
+                model_inputs = dict(state = inputs["state0"])
                 model_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.TRAIN, self.params)
-                model_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=model_scope.name)
+            
 
-            with tf.variable_scope("Model", reuse = True) as model_scope:
-                model_inputs = dict(state0 = inputs["state0"])
+            with tf.variable_scope("Model", reuse = True) as predict_scope:
+                model_inputs = dict(state = inputs["state0"])
                 predict_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
-            # predict_q_values = model_q_values
 
             with tf.variable_scope("TargetModel") as target_scope:
-                target_model_inputs = dict(state0 = inputs["state1"])
+                target_model_inputs = dict(state = inputs["state1"])
                 target_q_values = self.model_fn(target_model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
-                target_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=target_scope.name)
 
             
-            target_values = tf.where(
-                inputs["terminal"],
-                inputs["reward"],
-                inputs["reward"] + gamma * tf.reduce_max(target_q_values, axis=1)
-            )
+            # get variables
+            model_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=model_scope.name)
+            target_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=target_scope.name)
+
+            
+            not_terminal = 1.0 - tf.cast(inputs["terminal"], tf.float32)
+            target_values = inputs["reward"] + gamma * tf.reduce_max(target_q_values, axis=1) * not_terminal
             
 
             model_action_values = utils.select_columns(model_q_values, inputs["action"])
@@ -80,13 +86,20 @@ class DQN(object):
 
             loss = tf.losses.get_total_loss()
 
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.params.learning_rate)
+            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.params.learning_rate)
             
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+                train_op = optimizer.minimize(
+                    loss,
+                    global_step = tf.train.get_global_step(), 
+                    var_list = tf.get_collection(
+                        tf.GraphKeys.TRAINABLE_VARIABLES, 
+                        scope=model_scope.name
+                    ),
+                )
 
 
-            tf.summary.scalar("target", tf.reduce_mean(tf.reduce_max(target_q_values, axis=1)))
+            tf.summary.scalar("target", tf.reduce_mean(target_values))
             
             # end model_fn
             #####################
@@ -97,26 +110,25 @@ class DQN(object):
             tf.summary.scalar("loss", loss)
 
 
-
             train_summaries = tf.summary.merge_all()
 
 
             if target_model_update >= 1:
-                maybe_update_target = tf.cond(
+                update_target_op = tf.cond(
                     # global_step % target_model_update == 0
                     tf.equal(
                         tf.mod(tf.train.get_global_step(), target_model_update), 
                         0,
                     ),
-                    lambda: update_target_weights(target_variables, model_variables, target_model_update),
+                    lambda: update_target_weights_hard(target_variables, model_variables),
                     lambda: tf.no_op(),
                 )
             else:
-                maybe_update_target = update_target_weights(target_variables, model_variables, target_model_update)
+                update_target_op = update_target_weights_soft(target_variables, model_variables, target_model_update)
 
             final_train_op = tf.group(
                 train_op,
-                maybe_update_target,
+                update_target_op,
             )
 
             
@@ -179,7 +191,7 @@ class DQN(object):
                     state0_t : [state0]
                 }
 
-                predictions, _ = sess.run([predict_q_values, maybe_update_target], step_feed)
+                predictions, _ = sess.run([predict_q_values, update_target_op], step_feed)
 
                 action = policy.select_action(predictions[0])
 
@@ -198,7 +210,7 @@ class DQN(object):
                 train_fetches = {}
                 train_feed = {}
 
-                if memory.nb_entries >= min_memory:
+                if memory.nb_entries > min_memory:
                     experiences = memory.sample(batch_size)
                     experiences = [ list(x) for x in zip(*experiences) ]
 
