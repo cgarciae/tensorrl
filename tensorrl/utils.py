@@ -1,11 +1,11 @@
 import tensorflow as tf
 
-def initialize_or_restore(sess, model_dir):
+def initialize_or_restore(sess, model_dir, global_variables_initializer):
 
     checkpoint_path = tf.train.latest_checkpoint(model_dir)
 
     if checkpoint_path is None:
-        sess.run(tf.global_variables_initializer())
+        sess.run(global_variables_initializer)
         
     else:
         meta_path = checkpoint_path + ".meta"

@@ -1,0 +1,10 @@
+eps: 0.1
+memory-limit: 50000
+target-model-update: 0.01
+gamma: 0.99
+warmup-steps: 10
+batch-size: 32
+summary-steps: 100
+max-steps: 1000000
+learning-rate: 0.001
+regularization: 0.000
