@@ -20,10 +20,10 @@ def model_fn(inputs, mode, params):
 
     net = tf.layers.flatten(net)
 
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, use_bias=False, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, use_bias=False, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, use_bias=False, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 2) #, use_bias=False, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 2) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
 
     return net
 
@@ -42,61 +42,6 @@ def input_fn(env):
         terminal = tf.placeholder(tf.bool, shape = [None]),
     )
 
-class TimeExpanded(object):
-
-    def __init__(self, env, window):
-
-        self.env = env
-        self.window = window
-        self.state = None
-
-    def reset(self, *args, **kwargs):
-        new_state = self.env.reset(*args, **kwargs)
-        self.state = np.stack([new_state] * self.window, axis = -1)
-
-        return self.state
-
-    def step(self, *args, **kwargs):
-
-        new_state, reward, done, info = self.env.step(*args, **kwargs)
-
-        self.state[..., 1:] = self.state[..., :-1]
-        self.state[..., 0] = new_state
-
-        return self.state, reward, done, info
-
-    def __getattr__(self, attr):
-        return getattr(self.env, attr)
-
-
-class Physics(object):
-
-    def __init__(self, env):
-
-        self.env = env
-        self.window = 2
-        self.state = None
-
-    def reset(self, *args, **kwargs):
-        new_state = self.env.reset(*args, **kwargs)
-        zeros = np.zeros_like(new_state)
-        self.state = np.stack([new_state, zeros], axis = -1)
-
-        return self.state
-
-    def step(self, *args, **kwargs):
-
-        new_state, reward, done, info = self.env.step(*args, **kwargs)
-        old_state = self.state[..., 0]
-
-        self.state[..., 0] = new_state
-        self.state[..., 1] = new_state - old_state
-
-        return self.state, reward, done, info
-
-    def __getattr__(self, attr):
-        return getattr(self.env, attr)
-
 
 
 @click.command()
@@ -109,6 +54,9 @@ def main(model_dir, visualize, **params):
 
     env = gym.make('CartPole-v1')
     # env = Physics(env)
+
+    np.random.seed(123)
+    env.seed(123)
 
     agent = trl.agent.DQN(model_fn, model_dir, params=params)
 

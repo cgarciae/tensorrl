@@ -75,10 +75,10 @@ class DQN(object):
             model_action_values = utils.select_columns(model_q_values, inputs["action"])
             
 
-            loss = tf.losses.huber_loss(target_values, model_action_values)
-            loss = tf.reduce_mean(loss)
+            tf.losses.huber_loss(target_values, model_action_values)
+            # loss = tf.reduce_mean(loss)
 
-            # loss = tf.losses.get_total_loss()
+            loss = tf.losses.get_total_loss()
 
             optimizer = tf.train.AdamOptimizer(learning_rate=self.params.learning_rate)
             
