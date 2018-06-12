@@ -54,10 +54,10 @@ class DQN(object):
                 model_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.TRAIN, self.params)
                 model_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=model_scope.name)
 
-            # with tf.variable_scope("Model", reuse = True) as model_scope:
-            #     model_inputs = dict(state0 = inputs["state0"])
-            #     predict_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
-            predict_q_values = model_q_values
+            with tf.variable_scope("Model", reuse = True) as model_scope:
+                model_inputs = dict(state0 = inputs["state0"])
+                predict_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
+            # predict_q_values = model_q_values
 
             with tf.variable_scope("TargetModel") as target_scope:
                 target_model_inputs = dict(state0 = inputs["state1"])
@@ -86,7 +86,7 @@ class DQN(object):
                 train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
 
-            tf.summary.scalar("target", tf.reduce_mean(target_values))
+            tf.summary.scalar("target", tf.reduce_mean(tf.reduce_max(target_q_values, axis=1)))
             
             # end model_fn
             #####################
