@@ -16,7 +16,7 @@ def model_fn(inputs, mode, params):
 
     training = mode == tf.estimator.ModeKeys.TRAIN
 
-    net = inputs["state"]
+    net = inputs["state"]   
 
     net = tf.layers.flatten(net)
 
