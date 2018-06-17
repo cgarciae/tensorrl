@@ -47,9 +47,8 @@ def input_fn(env):
 @click.command()
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
-@click_options_config("cartpole_dqn.yml")
-def main(model_dir, visualize, **params):
-    params = Dicto(params)
+@click_options_config("cartpole_dqn.yml", "params")
+def main(model_dir, visualize, params):
     print(params)
 
     env = gym.make('CartPole-v1')
@@ -57,10 +56,10 @@ def main(model_dir, visualize, **params):
 
     # env = trl.env.TimeExpanded(env, 3)
 
-    np.random.seed(123)
-    env.seed(123)
+    np.random.seed(params.seed)
+    env.seed(params.seed)
 
-    agent = trl.prototypes.DQN(model_fn, model_dir, params=params)
+    agent = trl.prototype.DQN(model_fn, model_dir, params=params)
 
     agent.train(
         env,
@@ -76,7 +75,9 @@ def main(model_dir, visualize, **params):
         warmup_steps = params.warmup_steps,
         batch_size = params.batch_size,
         summary_steps = params.summary_steps,
+        save_steps = params.save_steps,
         visualize = visualize,
+        seed = params.seed,
     )
 
 if __name__ == '__main__':
