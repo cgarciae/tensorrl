@@ -20,8 +20,8 @@ def model_fn(inputs, mode, params):
 
     net = tf.layers.flatten(net)
 
-    net = tf.layers.dense(net, 64, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 32, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 2, use_bias=False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
 
@@ -29,7 +29,7 @@ def model_fn(inputs, mode, params):
 
 def input_fn(env):
     state_shape = list(env.env.observation_space.shape)
-    state_shape += [env.window]
+    # state_shape += [env.window]
 
     print("STATE SHAPE")
     print(state_shape)
@@ -55,12 +55,12 @@ def main(model_dir, visualize, **params):
     env = gym.make('CartPole-v1')
     env._max_episode_steps = 2000
 
-    env = trl.env.TimeExpanded(env, 3)
+    # env = trl.env.TimeExpanded(env, 3)
 
     np.random.seed(123)
     env.seed(123)
 
-    agent = trl.agent.DQN(model_fn, model_dir, params=params)
+    agent = trl.prototypes.DQN(model_fn, model_dir, params=params)
 
     agent.train(
         env,
