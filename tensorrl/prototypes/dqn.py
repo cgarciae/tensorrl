@@ -40,21 +40,37 @@ class DQN(object):
         warmup_steps = None,
         batch_size = 64,
         summary_steps = 100,
+        save_steps = 10000,
         visualize = False,
+        seed = None,
         ):
 
         min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
 
         with tf.Graph().as_default() as graph:
 
-            inputs = input_fn()
-
-            print(inputs)
+            #####################
+            # config
+            #####################
 
             tf.train.get_or_create_global_step()
 
+            if seed is not None:
+                tf.set_random_seed(seed)
+
+
             #####################
-            # start model_fn
+            # inputs
+            #####################
+
+            inputs = input_fn()
+            state0_t, reward_t, terminal_t, action_t, state1_t = [ inputs[x] for x in ["state0", "reward", "terminal", "action", "state1"] ]
+
+            print(inputs)
+
+            #####################
+            # model_fn
+            #####################
             
 
             with tf.variable_scope("Model") as model_scope:
@@ -108,11 +124,10 @@ class DQN(object):
 
             tf.summary.scalar("target", tf.reduce_mean(target_values))
             
-            # end model_fn
-            #####################
 
             #####################
             # train stuff
+            #####################
 
             tf.summary.scalar("loss", loss)
 
@@ -138,12 +153,9 @@ class DQN(object):
                 update_target_op,
             )
 
-            
-            # train stuff
-            #####################
-
             #####################
             # episode stuff
+            #####################
 
             
 
@@ -161,13 +173,13 @@ class DQN(object):
             ])
 
 
-            # episode stuff
+            #####################
+            # initializers
             #####################
 
-            state0_t, reward_t, terminal_t, action_t, state1_t = [ inputs[x] for x in ["state0", "reward", "terminal", "action", "state1"] ]
+            
 
             global_variables_initializer = tf.global_variables_initializer()
-
 
         graph.finalize()
 
@@ -231,6 +243,11 @@ class DQN(object):
                     if step % summary_steps == 0:
                         train_fetches["train_summaries"] = train_summaries
 
+                    if step % save_steps == 0:
+                        saver = tf.train.Saver()
+                        saver.save(sess, self.model_dir, global_step=step)
+
+
                 if terminal:
                     train_feed[episode_length_t] = _episode_length
                     train_feed[episode_reward_t] = _episode_reward
@@ -238,8 +255,6 @@ class DQN(object):
                     train_fetches["episode_op"] = final_episode_op
                     train_fetches["episode_summaries"] = episode_summaries
 
-                if step % summary_steps == 0:
-                    pass
                 
                 
 
