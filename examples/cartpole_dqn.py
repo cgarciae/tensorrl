@@ -8,7 +8,7 @@ import tensorrl as trl
 import tensorflow as tf
 import tfinterface as ti
 import numpy as np
-from rl.policy import EpsGreedyQPolicy, BoltzmannQPolicy
+from rl.policy import EpsGreedyQPolicy, BoltzmannQPolicy, MaxBoltzmannQPolicy
 from rl.memory import SequentialMemory
 
 
@@ -21,15 +21,15 @@ def model_fn(inputs, mode, params):
     net = tf.layers.flatten(net)
 
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16) #, activation=tf.nn.relu, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16) #, activation=tf.nn.relu, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 2, use_bias=False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
 
     return net
 
 def input_fn(env):
     state_shape = list(env.env.observation_space.shape)
-    # state_shape += [env.window]
+    state_shape += [env.window]
 
     print("STATE SHAPE")
     print(state_shape)
@@ -54,7 +54,7 @@ def main(model_dir, visualize, params):
     env = gym.make('CartPole-v1')
     env._max_episode_steps = 2000
 
-    # env = trl.env.TimeExpanded(env, 3)
+    env = trl.env.TimeExpanded(env, 3)
 
     np.random.seed(params.seed)
     env.seed(params.seed)
@@ -64,8 +64,8 @@ def main(model_dir, visualize, params):
     agent.train(
         env,
         lambda: input_fn(env),
-        max_steps = params.max_steps, 
-        policy = BoltzmannQPolicy(),
+        max_steps = params.max_steps,
+        policy = MaxBoltzmannQPolicy(eps=0.9),
         memory = SequentialMemory(
             limit = params.memory_limit,
             window_length = 1,
