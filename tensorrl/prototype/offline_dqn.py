@@ -23,7 +23,7 @@ def update_target_weights_soft(target_variables, model_variables, beta):
 
     return tf.group(*updates)
 
-class DQN(object):
+class OfflineDQN(object):
 
     def __init__(self, model_fn, model_dir, params = {}):
 
@@ -97,7 +97,7 @@ class DQN(object):
 
             
             not_terminal = 1.0 - tf.cast(inputs["terminal"], tf.float32)
-
+            
             if double_dqn:
                 model_actions = tf.argmax(predict_q_values, axis=1, output_type=tf.int32)
                 action_values = utils.select_columns(target_q_values, model_actions)
@@ -201,14 +201,15 @@ class DQN(object):
             graph.finalize()
             
 
-            current_step = sess.run(global_step)
+            step = sess.run(global_step)
 
             state0 = env.reset()
             
             _episode_length = 0
             _episode_reward = 0.0
+            _max_reward = -float('inf')
 
-            for step in range(current_step, max_steps):
+            while step <= max_steps:
                 
                 step_feed = {
                     state0_t : [state0]
@@ -233,61 +234,77 @@ class DQN(object):
                 train_fetches = {}
                 train_feed = {}
 
-                if memory.nb_entries > min_memory:
-                    experiences = memory.sample(batch_size)
-                    experiences = [ list(x) for x in zip(*experiences) ]
+                if terminal and memory.nb_entries > min_memory:
+                    for _ in range(_episode_length):
+                        step += 1
 
-                    state0_a, action_a, reward_a, state1_a, terminal_a = experiences
+                        experiences = memory.sample(batch_size)
+                        experiences = [ list(x) for x in zip(*experiences) ]
 
-                    state0_a = np.squeeze(state0_a)
-                    state1_a = np.squeeze(state1_a)
+                        state0_a, action_a, reward_a, state1_a, terminal_a = experiences
 
-                    train_feed.update({
-                        state0_t : state0_a,
-                        action_t : action_a,
-                        reward_t : reward_a,
-                        state1_t : state1_a,
-                        terminal_t : terminal_a,
-                    })
+                        state0_a = np.squeeze(state0_a)
+                        state1_a = np.squeeze(state1_a)
 
-                    train_fetches["train_op"] = final_train_op
+                        train_feed.update({
+                            state0_t : state0_a,
+                            action_t : action_a,
+                            reward_t : reward_a,
+                            state1_t : state1_a,
+                            terminal_t : terminal_a,
+                        })
 
-                    if step % summary_steps == 0:
-                        train_fetches["train_summaries"] = train_summaries
+                        train_fetches["train_op"] = final_train_op
 
-                    if step % save_steps == 0:
-                        checkpoint_path = os.path.join(self.model_dir, "model.ckpt")
-                        saver.save(sess, checkpoint_path, global_step=step)
+                        if step % summary_steps == 0:
+                            train_fetches["train_summaries"] = train_summaries
 
+                        if step % save_steps == 0:
+                            checkpoint_path = os.path.join(self.model_dir, "model.ckpt")
+                            saver.save(sess, checkpoint_path, global_step=step)
+
+                        if _episode_reward > _max_reward:
+                            _max_reward = _episode_reward
+
+                            checkpoint_path = os.path.join(self.model_dir, "best.ckpt")
+                            saver.save(sess, checkpoint_path)
+
+                        else:
+                            checkpoint_path = os.path.join(self.model_dir, "best.ckpt")
+                            saver.restore(sess, "best.ckpt")
+
+
+                        # train
+                        results = sess.run(train_fetches, train_feed)
+
+                        writer.add_summary(
+                            results["train_summaries"],
+                            step,
+                        )
+
+
+                
 
                 if terminal:
-                    train_feed[episode_length_t] = _episode_length
-                    train_feed[episode_reward_t] = _episode_reward
+                    ep_fetches = {}
+                    ep_feed = {}
 
-                    train_fetches["episode_op"] = final_episode_op
-                    train_fetches["episode_summaries"] = episode_summaries
+                    ep_feed[episode_length_t] = _episode_length
+                    ep_feed[episode_reward_t] = _episode_reward
+
+                    ep_fetches["episode_op"] = final_episode_op
+                    ep_fetches["episode_summaries"] = episode_summaries
 
                 
-                
+                    # do training
+                    results = sess.run(ep_fetches, ep_feed)
 
-                # do training
-                results = sess.run(train_fetches, train_feed)
-
-                if "train_summaries" in results:
-                    writer.add_summary(
-                        results["train_summaries"],
-                        step,
-                    )
-
-                if "episode_summaries" in results:
+ 
                     writer.add_summary(
                         results["episode_summaries"],
                         step,
                     )
 
-
-                # end step
-                if terminal:
                     state0 = env.reset()
                     #
                     _episode_length = 0
