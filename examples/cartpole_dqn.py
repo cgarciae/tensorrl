@@ -21,10 +21,9 @@ def model_fn(inputs, mode, params):
     net = tf.layers.flatten(net)
 
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16) #, activation=tf.nn.relu, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-    net = tf.layers.dense(net, 16) #, activation=tf.nn.relu, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 2, use_bias=False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
-
     return net
 
 def input_fn(env):
@@ -47,7 +46,7 @@ def input_fn(env):
 @click.command()
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
-@click_options_config("cartpole_dqn.yml", "params")
+@click_options_config("examples/cartpole_dqn.yml", "params")
 def main(model_dir, visualize, params):
     print(params)
 
