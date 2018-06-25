@@ -46,7 +46,7 @@ def input_fn(env):
 @click.command()
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
-@click_options_config("examples/cartpole_dqn.yml", "params")
+@click_options_config("examples/cartpole_offline_dqn.yml", "params")
 def main(model_dir, visualize, params):
     print(params)
 
@@ -58,7 +58,7 @@ def main(model_dir, visualize, params):
     np.random.seed(params.seed)
     env.seed(params.seed)
 
-    agent = trl.prototype.DQN(model_fn, model_dir, params=params)
+    agent = trl.prototype.OfflineDQN(model_fn, model_dir, params=params)
 
     agent.train(
         env,

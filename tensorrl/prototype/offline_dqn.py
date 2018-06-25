@@ -220,6 +220,7 @@ class OfflineDQN(object):
                 action = policy.select_action(q_values = predictions[0])
 
                 state1, reward, terminal, _info = env.step(action)
+                
 
                 if visualize:
                     env.render()
@@ -231,12 +232,15 @@ class OfflineDQN(object):
 
                 memory.append(state0, action, reward, terminal)
 
-                train_fetches = {}
-                train_feed = {}
+                
 
                 if terminal and memory.nb_entries > min_memory:
-                    for _ in range(_episode_length):
+
+                    for _ in range(_episode_reward):
                         step += 1
+
+                        train_fetches = {}
+                        train_feed = {}
 
                         experiences = memory.sample(batch_size)
                         experiences = [ list(x) for x in zip(*experiences) ]
@@ -259,45 +263,34 @@ class OfflineDQN(object):
                         if step % summary_steps == 0:
                             train_fetches["train_summaries"] = train_summaries
 
+                        # train
+                        results = sess.run(train_fetches, train_feed)
+
+                        if "train_summaries" in results:
+                            writer.add_summary(
+                                results["train_summaries"],
+                                step,
+                            )
+                        
                         if step % save_steps == 0:
                             checkpoint_path = os.path.join(self.model_dir, "model.ckpt")
                             saver.save(sess, checkpoint_path, global_step=step)
 
-                        if _episode_reward > _max_reward:
-                            _max_reward = _episode_reward
 
-                            checkpoint_path = os.path.join(self.model_dir, "best.ckpt")
-                            saver.save(sess, checkpoint_path)
-
-                        else:
-                            checkpoint_path = os.path.join(self.model_dir, "best.ckpt")
-                            saver.restore(sess, "best.ckpt")
-
-
-                        # train
-                        results = sess.run(train_fetches, train_feed)
-
-                        writer.add_summary(
-                            results["train_summaries"],
-                            step,
-                        )
-
-
-                
 
                 if terminal:
-                    ep_fetches = {}
-                    ep_feed = {}
+                    train_fetches = {}
+                    train_feed = {}
 
-                    ep_feed[episode_length_t] = _episode_length
-                    ep_feed[episode_reward_t] = _episode_reward
+                    train_feed[episode_length_t] = _episode_length
+                    train_feed[episode_reward_t] = _episode_reward
 
-                    ep_fetches["episode_op"] = final_episode_op
-                    ep_fetches["episode_summaries"] = episode_summaries
+                    train_fetches["episode_op"] = final_episode_op
+                    train_fetches["episode_summaries"] = episode_summaries
 
                 
                     # do training
-                    results = sess.run(ep_fetches, ep_feed)
+                    results = sess.run(train_fetches, train_feed)
 
  
                     writer.add_summary(
