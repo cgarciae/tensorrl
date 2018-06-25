@@ -47,6 +47,7 @@ class DQN(object):
         double_dqn = False,
         env_cycles = 1,
         train_cycles = 1,
+        huber_delta = 100.0,
         ):
 
         min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
@@ -116,7 +117,7 @@ class DQN(object):
             model_action_values = utils.select_columns(model_q_values, inputs["action"])
             
 
-            tf.losses.huber_loss(target_values, model_action_values, delta = 100.0)
+            tf.losses.huber_loss(target_values, model_action_values, delta = huber_delta)
             # loss = tf.reduce_mean(loss)
 
             loss = tf.losses.get_total_loss()
