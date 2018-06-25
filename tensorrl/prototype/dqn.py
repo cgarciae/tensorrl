@@ -45,6 +45,8 @@ class DQN(object):
         visualize = False,
         seed = None,
         double_dqn = False,
+        env_cycles = 1,
+        train_cycles = 1,
         ):
 
         min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
@@ -190,25 +192,206 @@ class DQN(object):
             global_variables_initializer = tf.global_variables_initializer()
 
             saver = tf.train.Saver()
-
-        
-
-        writer = tf.summary.FileWriter(self.model_dir)
+            writer = tf.summary.FileWriter(self.model_dir)
+            writer.add_graph(graph)
 
         with graph.as_default(), tf.Session(graph = graph) as sess:
             
-            utils.initialize_or_restore(sess, self.model_dir, global_variables_initializer)
+            utils.initialize_or_restore(sess, self.model_dir, global_variables_initializer, saver)
             graph.finalize()
             
 
-            current_step = sess.run(global_step)
+            step = sess.run(global_step)
 
             state0 = env.reset()
             
             _episode_length = 0
             _episode_reward = 0.0
 
-            for step in range(current_step, max_steps):
+            while step < max_steps:
+
+                #################
+                # env cycles
+                #################
+
+                for _ in range(env_cycles):
+                
+                    step_feed = {
+                        state0_t : [state0]
+                    }
+
+                    predictions = sess.run(predict_q_values, step_feed)
+
+                    action = policy.select_action(q_values = predictions[0])
+
+                    state1, reward, terminal, _info = env.step(action)
+
+                    if visualize:
+                        env.render()
+
+                    #
+                    _episode_length += 1
+                    _episode_reward += reward
+                    #
+
+                    memory.append(state0, action, reward, terminal)
+
+                    if terminal:
+                        ep_feed = {
+                            episode_length_t: _episode_length,
+                            episode_reward_t: _episode_reward,
+                        }
+                        ep_fetches = dict(
+                            episode_op = final_episode_op,
+                            episode_summaries = episode_summaries,
+                        )
+
+                        results = sess.run(ep_fetches, ep_feed)
+
+                        writer.add_summary(
+                            results["episode_summaries"],
+                            step,
+                        )
+
+
+                        state0 = env.reset()
+                        #
+                        _episode_length = 0
+                        _episode_reward = 0.0
+                        #
+
+                    else:
+                        state0 = state1
+
+                #################
+                # train cycles
+                #################
+
+                for _ in range(train_cycles):
+                    
+                    if memory.nb_entries > min_memory:
+                        step += 1
+
+                        experiences = memory.sample(batch_size)
+                        experiences = [ list(x) for x in zip(*experiences) ]
+
+                        state0_a, action_a, reward_a, state1_a, terminal_a = experiences
+
+                        state0_a = np.squeeze(state0_a)
+                        state1_a = np.squeeze(state1_a)
+
+                        train_feed = {
+                            state0_t : state0_a,
+                            action_t : action_a,
+                            reward_t : reward_a,
+                            state1_t : state1_a,
+                            terminal_t : terminal_a,
+                        }
+
+                        train_fetches = dict(
+                            train_op = final_train_op,
+                        )
+
+                        if step % summary_steps == 0:
+                            train_fetches["train_summaries"] = train_summaries
+
+                        if step % save_steps == 0:
+                            checkpoint_path = os.path.join(self.model_dir, "model.ckpt")
+                            saver.save(sess, checkpoint_path, global_step=step)
+                
+
+                        # do training
+                        results = sess.run(train_fetches, train_feed)
+
+                        if "train_summaries" in results:
+                            writer.add_summary(
+                                results["train_summaries"],
+                                step,
+                            )
+            
+
+                
+
+    def eval(
+        self, env, input_fn, 
+        max_steps = 10000, 
+        policy = EpsGreedyQPolicy(),
+        visualize = True,
+        seed = None,
+        ):
+
+        with tf.Graph().as_default() as graph:
+
+            #####################
+            # config
+            #####################
+
+            if seed is not None:
+                tf.set_random_seed(seed)
+
+            #####################
+            # inputs
+            #####################
+
+            inputs = input_fn()
+            state0_t, reward_t, terminal_t, action_t, state1_t = [ inputs[x] for x in ["state0", "reward", "terminal", "action", "state1"] ]
+
+            print(inputs)
+
+            #####################
+            # model_fn
+            #####################
+            
+
+            with tf.variable_scope("Model") as predict_scope:
+                model_inputs = dict(state = inputs["state0"])
+                predict_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
+
+
+            
+            #####################
+            # episode stuff
+            #####################
+
+            
+
+            episode_length_t = tf.placeholder(tf.int32, name="episode_length")
+            episode_reward_t = tf.placeholder(tf.int32, name="episode_reward")
+
+            episode_length_summary = tf.summary.scalar("episode_length", episode_length_t)
+            episode_reward_summary = tf.summary.scalar("episode_reward", episode_reward_t)
+            
+            
+            episode_summaries = tf.summary.merge([
+                episode_length_summary,
+                episode_reward_summary
+            ])
+
+
+            #####################
+            # initializers
+            #####################
+
+            global_variables_initializer = tf.global_variables_initializer()
+
+            saver = tf.train.Saver()
+
+            writer = tf.summary.FileWriter(
+                os.path.join(self.model_dir, "eval")
+            )
+
+        with graph.as_default(), tf.Session(graph = graph) as sess:
+            
+            utils.initialize_or_restore(sess, self.model_dir, global_variables_initializer, saver)
+
+            graph.finalize()
+
+            state0 = env.reset()
+            
+            _episode_length = 0
+            _episode_reward = 0.0
+
+            for step in range(max_steps):
                 
                 step_feed = {
                     state0_t : [state0]
@@ -228,66 +411,23 @@ class DQN(object):
                 _episode_reward += reward
                 #
 
-                memory.append(state0, action, reward, terminal)
-
-                train_fetches = {}
-                train_feed = {}
-
-                if memory.nb_entries > min_memory:
-                    experiences = memory.sample(batch_size)
-                    experiences = [ list(x) for x in zip(*experiences) ]
-
-                    state0_a, action_a, reward_a, state1_a, terminal_a = experiences
-
-                    state0_a = np.squeeze(state0_a)
-                    state1_a = np.squeeze(state1_a)
-
-                    train_feed.update({
-                        state0_t : state0_a,
-                        action_t : action_a,
-                        reward_t : reward_a,
-                        state1_t : state1_a,
-                        terminal_t : terminal_a,
-                    })
-
-                    train_fetches["train_op"] = final_train_op
-
-                    if step % summary_steps == 0:
-                        train_fetches["train_summaries"] = train_summaries
-
-                    if step % save_steps == 0:
-                        checkpoint_path = os.path.join(self.model_dir, "model.ckpt")
-                        saver.save(sess, checkpoint_path, global_step=step)
-
-
                 if terminal:
-                    train_feed[episode_length_t] = _episode_length
-                    train_feed[episode_reward_t] = _episode_reward
-
-                    train_fetches["episode_op"] = final_episode_op
-                    train_fetches["episode_summaries"] = episode_summaries
-
-                
-                
-
-                # do training
-                results = sess.run(train_fetches, train_feed)
-
-                if "train_summaries" in results:
-                    writer.add_summary(
-                        results["train_summaries"],
-                        step,
+                    ep_feed = {
+                        episode_length_t: _episode_length,
+                        episode_reward_t: _episode_reward,
+                    }
+                    ep_fetches = dict(
+                        episode_summaries = episode_summaries,
                     )
 
-                if "episode_summaries" in results:
+                    results = sess.run(ep_fetches, ep_feed)
+
                     writer.add_summary(
                         results["episode_summaries"],
                         step,
                     )
 
 
-                # end step
-                if terminal:
                     state0 = env.reset()
                     #
                     _episode_length = 0
@@ -296,3 +436,4 @@ class DQN(object):
 
                 else:
                     state0 = state1
+                

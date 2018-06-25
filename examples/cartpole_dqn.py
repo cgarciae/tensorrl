@@ -8,7 +8,7 @@ import tensorrl as trl
 import tensorflow as tf
 import tfinterface as ti
 import numpy as np
-from rl.policy import EpsGreedyQPolicy, BoltzmannQPolicy, MaxBoltzmannQPolicy
+from rl.policy import EpsGreedyQPolicy, BoltzmannQPolicy, MaxBoltzmannQPolicy, GreedyQPolicy
 from rl.memory import SequentialMemory
 
 
@@ -42,12 +42,15 @@ def input_fn(env):
     )
 
 
+@click.group()
+def main():
+    pass
 
-@click.command()
+@main.command("train")
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
 @click_options_config("examples/cartpole_dqn.yml", "params")
-def main(model_dir, visualize, params):
+def train(model_dir, visualize, params):
     print(params)
 
     env = gym.make('CartPole-v1')
@@ -75,6 +78,34 @@ def main(model_dir, visualize, params):
         batch_size = params.batch_size,
         summary_steps = params.summary_steps,
         save_steps = params.save_steps,
+        visualize = visualize,
+        seed = params.seed,
+        double_dqn = True,
+    )
+
+
+@main.command("eval")
+@click.option("--model-dir", required = True)
+@click.option("-v", "--visualize", is_flag = True)
+@click_options_config("examples/cartpole_dqn.yml", "params")
+def eval(model_dir, visualize, params):
+    print(params)
+
+    env = gym.make('CartPole-v1')
+    env._max_episode_steps = 2000
+
+    env = trl.env.TimeExpanded(env, 3)
+
+    np.random.seed(params.seed)
+    env.seed(params.seed)
+
+    agent = trl.prototype.DQN(model_fn, model_dir, params=params)
+
+    agent.eval(
+        env,
+        lambda: input_fn(env),
+        max_steps = params.max_steps,
+        policy = EpsGreedyQPolicy(eps=0.0),
         visualize = visualize,
         seed = params.seed,
     )
