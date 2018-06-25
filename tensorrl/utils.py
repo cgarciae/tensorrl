@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-def initialize_or_restore(sess, model_dir, global_variables_initializer):
+def initialize_or_restore(sess, model_dir, global_variables_initializer, saver):
 
     checkpoint_path = tf.train.latest_checkpoint(model_dir)
 
@@ -12,9 +12,6 @@ def initialize_or_restore(sess, model_dir, global_variables_initializer):
         
     else:
         print("Restoring Variables from {checkpoint_path}".format(checkpoint_path=checkpoint_path))
-        meta_path = checkpoint_path + ".meta"
-
-        saver = tf.train.import_meta_graph(meta_path)
         saver.restore(sess, checkpoint_path)
 
 
