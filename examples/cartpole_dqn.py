@@ -20,7 +20,7 @@ def model_fn(inputs, mode, params):
 
     net = tf.layers.flatten(net)
 
-    net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
+    net = tf.layers.dense(net, 32, use_bias = False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 16, activation=tf.nn.relu) #, batch_norm=dict(training=training)) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))
     net = tf.layers.dense(net, 2, use_bias=False) #, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=params.regularization))

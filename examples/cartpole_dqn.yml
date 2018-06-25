@@ -1,8 +1,8 @@
 memory-limit: 50000
 target-model-update: 0.01
 gamma: 0.99
-warmup-steps: 256
-batch-size: 128
+warmup-steps: 1024
+batch-size: 256
 summary-steps: 100
 save-steps: 10000
 max-steps: 1000000
