@@ -1,13 +1,13 @@
 memory-limit: 100000
-target-model-update: 0.01
-gamma: 0.999
-warmup-steps: 10000
-batch-size: 512
+target-model-update: 0.001
+gamma: 0.99
+warmup-steps: 8000
+batch-size: 1024
 summary-steps: 100
 save-steps: 10000
 max-steps: 1000000
-learning-rate: 0.001
+learning-rate: 0.0005
 seed: 123
 train_cycles: 1
-huber_dalta: 400.0
+huber_dalta: 100.0
 # regularization: 0.0001

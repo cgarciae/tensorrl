@@ -21,15 +21,17 @@ def get_model_fn(env):
 
         net = tf.layers.flatten(net)
 
-        net = tf.layers.dense(net, 32)
+        net = tf.layers.dense(net, 32, use_bias=False)
         # net = tf.layers.dense(net, 64, activation=tf.nn.relu)
-        net = tf.layers.dense(net, 128, activation=tf.nn.relu)
+        net = tf.layers.dense(net, 128, activation=tf.nn.relu, use_bias=False)
+        net = tf.layers.dense(net, 128, activation=tf.nn.relu, use_bias=False)
+        net = tf.layers.dense(net, 128, activation=tf.nn.relu, use_bias=False)
         # net = tf.concat([net, tf.layers.dense(net, 12, activation=tf.nn.relu)], axis = 1)
         # net = tf.concat([net, tf.layers.dense(net, 12, activation=tf.nn.relu)], axis = 1)
         # net = tf.concat([net, tf.layers.dense(net, 12, activation=tf.nn.relu)], axis = 1)
         # net = tf.layers.dense(net, 16, activation=tf.nn.relu)
         # net = tf.layers.dropout(net, rate = 0.3)
-        net = tf.layers.dense(net, env.action_space.n) 
+        net = tf.layers.dense(net, env.action_space.n, use_bias=False) 
 
         return net
     
@@ -76,7 +78,7 @@ def train(model_dir, visualize, params):
         env,
         lambda: input_fn(env),
         max_steps = params.max_steps,
-        policy = MaxBoltzmannQPolicy(eps=0.9),
+        policy = BoltzmannQPolicy(),
         memory = SequentialMemory(
             limit = params.memory_limit,
             window_length = 1,
