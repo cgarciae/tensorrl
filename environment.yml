@@ -1,0 +1,12 @@
+name: tensorrl
+
+dependencies:
+  - python=3.6
+  - ipython
+  - jupyter
+  - matplotlib
+  - scikit-learn
+  - pip:
+    - tf-nightly-2.0-preview
+    - dicto
+    - tqdm
