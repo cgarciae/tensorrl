@@ -12,14 +12,14 @@ from rl.memory import SequentialMemory
 
 PARAMS = dict(
     memory_limit = 100000,
-    target_model_update = 0.001,
-    gamma = 0.999,
-    warmup_steps = 10000,
-    batch_size = 32,
+    target_model_update = 0.02,
+    gamma = 0.99,
+    warmup_steps = 40,
+    batch_size = 16,
     summary_steps = 100,
     save_steps = 10000,
     max_steps = 1000000,
-    learning_rate = 0.0001,
+    learning_rate = 0.001,
     seed = 123,
     eval_episode_frequency = 20,
     eval_episodes = 2,
@@ -29,8 +29,8 @@ def model_fn(params):
 
     model = tf.keras.Sequential([
         tf.keras.layers.InputLayer(input_shape = [8]),
-        tf.keras.layers.Dense(256, activation = tf.nn.relu),
-        tf.keras.layers.Dense(32, activation = tf.nn.relu),
+        tf.keras.layers.Dense(40, activation = tf.nn.relu),
+        tf.keras.layers.Dense(40, activation = tf.nn.relu),
         # tf.keras.layers.Dense(256, activation = tf.nn.relu),
         tf.keras.layers.Dense(4, use_bias = False),
     ])
@@ -52,10 +52,7 @@ class API:
         print(params)
 
         env = gym.make('LunarLander-v2')
-        env._max_episode_steps = 2000
-
-        np.random.seed(params.seed)
-        env.seed(params.seed)
+        env._max_episode_steps = 1000
 
         agent = trl.eager.DQN(
             lambda: model_fn(params), 
@@ -80,7 +77,7 @@ class API:
             visualize = visualize,
             visualize_eval = visualize_eval,
             seed = params.seed,
-            double_dqn = True,
+            double_dqn = False,
             eval_episode_frequency = params.eval_episode_frequency,
             eval_episodes = params.eval_episodes,
         )

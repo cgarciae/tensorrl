@@ -6,8 +6,7 @@ from rl.memory import SequentialMemory
 import os
 import time
 import cv2
-import matplotlib.pyplot as plt
-# import imageio
+from tensorflow.python.ops import summary_ops_v2
 
 def update_target_weights_hard(target_variables, model_variables):
     for target, current in zip(target_variables, model_variables):
@@ -21,14 +20,11 @@ def update_target_weights_soft(target_variables, model_variables, beta):
 def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
 
     total_reward = [0.0] * episodes
-    fourcc = cv2.VideoWriter_fourcc(*"MJPG") # Be sure to use lower case
     videos_path = os.path.join(model_dir, "videos")
-    
 
     for ep in range(episodes):
         state = env.reset()
         terminal = False
-        writer = None
         episode_path = os.path.join(videos_path, str(int(time.time() * 1000)))
         os.makedirs(episode_path)
 
@@ -45,29 +41,11 @@ def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
                 image = env.render(mode="rgb_array")[..., ::-1]
                 cv2.imwrite(image_path, image)
                 
-                # plt.imshow(image)
-
-                # if writer is None:
-                #     shape = image.shape[:2][::-1]
-                #     videos_path = os.path.join(model_dir, "videos")
-                #     os.makedirs(videos_path, exist_ok=True)
-                #     output_path = os.path.join(videos_path, str(int(time.time())) + ".gif")
-                    # writer = cv2.VideoWriter(output_path, fourcc, 20.0, shape, False)
-                    # writer = FFmpegWriter(output_path)
-
-                # writer.write(image)
-                # writer.writeFrame(image)
-                # images.append(image)
 
             total_reward[ep] += reward
-
-        # if visualize:
-        #     imageio.mimwrite(output_path, images, duration = 0.00001)
-            # writer.release()
-            # writer.close()
-
         
     return np.mean(total_reward)
+
 
         
 
@@ -100,33 +78,32 @@ class DQN(object):
         huber_delta = 100.0,
         eval_episode_frequency = None,
         eval_episodes = 1,
+        checkpoint_steps = 100,
         ):
-
-        min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
-
-    
-
-        #####################
-        # config
-        #####################
 
         if seed is not None:
             tf.random.set_seed(seed)
+            np.random.seed(seed)
+            env.seed(seed)
 
-        step = 0
-        
-        #####################
-        # model_fn
-        #####################
         
         model: tf.keras.Model = self.model_fn()
         target_model: tf.keras.Model = self.model_fn()
 
-        
-        # get variables
+        # maybe load_weights
+        if os.path.exists(self.model_dir):
+            model.load_weights(
+                filepath = os.path.join(self.model_dir, "model"),
+            )
+            target_model.load_weights(
+                filepath = os.path.join(self.model_dir, "target_model"),
+            )
         model_variables = model.variables
         target_variables = target_model.variables
 
+        summary_writer = summary_ops_v2.create_file_writer(self.model_dir, flush_millis=10000)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.params.learning_rate)
+        min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
 
         def loss_fn(rewards, actions, terminal, model_q_values, target_q_values):
         
@@ -134,243 +111,99 @@ class DQN(object):
 
             if double_dqn:
                 model_actions = tf.argmax(model_q_values, axis=1, output_type=tf.int32)
-                action_values = utils.select_columns(target_q_values, model_actions)
+                target_action_values = utils.select_columns(target_q_values, model_actions)
             else:
-                action_values = tf.reduce_max(target_q_values, axis=1)
+                target_action_values = tf.reduce_max(target_q_values, axis=1)
 
-            target_values = rewards + gamma * action_values * not_terminal
-            
-
+            target_values = rewards + gamma * target_action_values * not_terminal
             model_action_values = utils.select_columns(model_q_values, actions)
-
             loss = utils.huber_loss(target_values, model_action_values, delta = huber_delta)
 
             return loss
-
-
-        optimizer = tf.keras.optimizers.Adam(learning_rate=self.params.learning_rate)
-
-
-        #####################
-        # initializers
-        #####################
-
+        
+        episode = 0
+        episode_length = 0
+        episode_reward = 0.0
         state = env.reset()
-        
-        
-        _episode = 0
-        _episode_length = 0
-        _episode_reward = 0.0
 
-        while optimizer.iterations < max_steps:
-
-            #################
-            # env cycles
-            #################
-
-            for _ in range(env_cycles):
-            
-                state = np.expand_dims(state, axis = 0)
-                predictions = model(state, training = False)
+        with summary_writer.as_default():
+            while optimizer.iterations < max_steps:
+                for _ in range(env_cycles):
+                    state = np.expand_dims(state, axis = 0)
+                    predictions = model(state, training = False)
 
 
-                action = policy.select_action(q_values = predictions[0].numpy())
+                    action = policy.select_action(q_values = predictions[0].numpy())
+                    state1, reward, terminal, _info = env.step(action)
+                    memory.append(state, action, reward, terminal)
+                    episode_length += 1
+                    episode_reward += reward
 
-                state1, reward, terminal, _info = env.step(action)
+                    if visualize:
+                        env.render()
 
-                if visualize:
-                    env.render()
+                    if terminal:
+                        if eval_episode_frequency and (episode % eval_episode_frequency) == 0:
+                            mean_total_reward = play_episodes(
+                                self.model_dir, env, model, GreedyQPolicy(), 
+                                visualize_eval, episodes=eval_episodes)
 
-                #
-                _episode_length += 1
-                _episode_reward += reward
-                #
-
-                memory.append(state, action, reward, terminal)
-
-                if terminal:
-
-
-                    if eval_episode_frequency and (_episode % eval_episode_frequency) == 0:
-                        mean_total_reward = play_episodes(
-                            self.model_dir, env, model, GreedyQPolicy(), 
-                            visualize_eval, episodes=eval_episodes)
+                            summary_ops_v2.scalar("mean_total_reward", mean_total_reward, step = optimizer.iterations)
+                            print(f"Episode: {episode}, Mean Total Reward: {mean_total_reward}")
                         
-                        print(f"Episode: {_episode}, Mean Total Reward: {mean_total_reward}")
+                        state = state1 = env.reset()
+                        episode_length = 0
+                        episode_reward = 0.0
+                        episode += 1
                     
-                    state = state1 = env.reset()
-                    #
-                    _episode_length = 0
-                    _episode_reward = 0.0
-                    _episode += 1
-                    #
+                    state = state1
 
-                
-                state = state1
+                #################
+                # train cycles
+                #################
 
-            #################
-            # train cycles
-            #################
+                if memory.nb_entries > min_memory:
+                    for _ in range(train_cycles):
 
-            if memory.nb_entries > min_memory:
-                for _ in range(train_cycles):
+                        experiences = memory.sample(batch_size)
 
-                    step += 1
-                
-                    experiences = memory.sample(batch_size)
+                        state_batch, action_batch, reward_batch, state1_batch, terminal_batch = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
 
-                    state_batch, action_batch, reward_batch, state1_batch, terminal_batch = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
+                        state_batch = state_batch.astype(np.float32)
+                        state1_batch = state1_batch.astype(np.float32)
 
-                    state_batch = state_batch.astype(np.float32)
-                    state1_batch = state1_batch.astype(np.float32)
+                        target_q_values = target_model(state1_batch, training = False)
 
-                    target_q_values = target_model(state1_batch, training = False)
+                        with tf.GradientTape() as tape:
+                            model_q_values = model(state_batch, training = True)
+                            loss = loss_fn(reward_batch, action_batch, terminal_batch, model_q_values, target_q_values)
 
-                    with tf.GradientTape() as tape:
-                        model_q_values = model(state_batch, training = True)
-                        loss = loss_fn(reward_batch, action_batch, terminal_batch, model_q_values, target_q_values)
+                        gradients = tape.gradient(loss, model_variables)
+                        gradients = zip(gradients, model_variables)
 
-                    gradients = tape.gradient(loss, model_variables)
-                    gradients = zip(gradients, model_variables)
+                        optimizer.apply_gradients(gradients)
 
-                    optimizer.apply_gradients(gradients)
+                        # checkpoints
+                        if tf.equal(optimizer.iterations % checkpoint_steps, 0):
+                            model.save_weights(
+                                filepath = os.path.join(self.model_dir, "model"),
+                                save_format = "tf",
+                            )
+                            target_model.save_weights(
+                                filepath = os.path.join(self.model_dir, "target_model"),
+                                save_format = "tf",
+                            )
 
+                        # summaries
+                        summary_ops_v2.scalar(
+                            "mean_target",
+                            tf.reduce_mean(target_q_values),
+                            step = optimizer.iterations,
+                        )
 
-                    if target_model_update >= 1 and tf.equal(tf.train.get_global_step() % target_model_update,  0):
-                        update_target_weights_hard(target_variables, model_variables)
-                    else:
-                        update_target_weights_soft(target_variables, model_variables, target_model_update)
-
-                
-                
-
-
-            
-
-                
-
-    def eval(
-        self, env, input_fn, 
-        max_steps = 10000, 
-        policy = EpsGreedyQPolicy(),
-        visualize = True,
-        seed = None,
-        ):
-
-        with tf.Graph().as_default() as graph:
-
-            #####################
-            # config
-            #####################
-
-            if seed is not None:
-                tf.set_random_seed(seed)
-
-            #####################
-            # inputs
-            #####################
-
-            inputs = input_fn()
-            state0_t, reward_t, terminal_t, action_t, state1_t = [ inputs[x] for x in ["state0", "reward", "terminal", "action", "state1"] ]
-
-            print(inputs)
-
-            #####################
-            # model_fn
-            #####################
-            
-
-            with tf.variable_scope("Model") as predict_scope:
-                model_inputs = dict(state = inputs["state0"])
-                model_q_values = self.model_fn(model_inputs, tf.estimator.ModeKeys.PREDICT, self.params)
-
-
-            
-            #####################
-            # episode stuff
-            #####################
-
-            
-
-            episode_length_t = tf.placeholder(tf.int32, name="episode_length")
-            episode_reward_t = tf.placeholder(tf.int32, name="episode_reward")
-
-            episode_length_summary = tf.summary.scalar("episode_length", episode_length_t)
-            episode_reward_summary = tf.summary.scalar("episode_reward", episode_reward_t)
-            
-            
-            episode_summaries = tf.summary.merge([
-                episode_length_summary,
-                episode_reward_summary
-            ])
-
-
-            #####################
-            # initializers
-            #####################
-
-            global_variables_initializer = tf.global_variables_initializer()
-
-            saver = tf.train.Saver()
-
-            writer = tf.summary.FileWriter(
-                os.path.join(self.model_dir, "eval")
-            )
-
-        with graph.as_default(), tf.Session(graph = graph) as sess:
-            
-            utils.initialize_or_restore(sess, self.model_dir, global_variables_initializer, saver)
-
-            graph.finalize()
-
-            state0 = env.reset()
-            
-            _episode_length = 0
-            _episode_reward = 0.0
-
-            for step in range(max_steps):
-                
-                step_feed = {
-                    state0_t : [state0]
-                }
-
-                predictions = sess.run(model_q_values, step_feed)
-
-                action = policy.select_action(q_values = predictions[0])
-
-                state1, reward, terminal, _info = env.step(action)
-
-                if visualize:
-                    env.render()
-
-                #
-                _episode_length += 1
-                _episode_reward += reward
-                #
-
-                if terminal:
-                    ep_feed = {
-                        episode_length_t: _episode_length,
-                        episode_reward_t: _episode_reward,
-                    }
-                    ep_fetches = dict(
-                        episode_summaries = episode_summaries,
-                    )
-
-                    results = sess.run(ep_fetches, ep_feed)
-
-                    writer.add_summary(
-                        results["episode_summaries"],
-                        step,
-                    )
-
-
-                    state0 = env.reset()
-                    #
-                    _episode_length = 0
-                    _episode_reward = 0.0
-                    #
-
-                else:
-                    state0 = state1
+                        # update weights
+                        if target_model_update >= 1 and tf.equal(optimizer.iterations % target_model_update,  0):
+                            update_target_weights_hard(target_variables, model_variables)
+                        else:
+                            update_target_weights_soft(target_variables, model_variables, target_model_update)
                 
