@@ -37,7 +37,7 @@ def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
             state, reward, terminal, _info = env.step(action)
 
             if visualize:
-                image_path = os.path.join(episode_path, f"{image_index}.jpg")
+                image_path = os.path.join(episode_path, f"{int(time.time() * 10000)}.jpg")
                 image = env.render(mode="rgb_array")[..., ::-1]
                 cv2.imwrite(image_path, image)
                 

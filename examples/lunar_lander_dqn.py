@@ -29,7 +29,7 @@ def model_fn(params):
 
     model = tf.keras.Sequential([
         tf.keras.layers.InputLayer(input_shape = [8]),
-        tf.keras.layers.Dense(40, activation = tf.nn.relu),
+        tf.keras.layers.Dense(80, activation = tf.nn.relu),
         tf.keras.layers.Dense(40, activation = tf.nn.relu),
         # tf.keras.layers.Dense(256, activation = tf.nn.relu),
         tf.keras.layers.Dense(4, use_bias = False),
@@ -63,7 +63,7 @@ class API:
         agent.train(
             env,
             max_steps = params.max_steps,
-            policy = MaxBoltzmannQPolicy(eps=0.9),
+            policy = MaxBoltzmannQPolicy(eps=0.2),
             memory = SequentialMemory(
                 limit = params.memory_limit,
                 window_length = 1,
