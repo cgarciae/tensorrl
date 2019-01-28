@@ -6,7 +6,11 @@ dependencies:
   - jupyter
   - matplotlib
   - scikit-learn
+  - opencv
   - pip:
     - tf-nightly-2.0-preview
     - dicto
     - tqdm
+    - keras-rl
+    - fire
+    - gym

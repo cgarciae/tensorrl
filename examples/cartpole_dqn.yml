@@ -1,11 +1,13 @@
-memory-limit: 50000
-target-model-update: 0.01
+memory_limit: 50000
+target_model_update: 0.01
 gamma: 0.99
-warmup-steps: 1024
-batch-size: 256
-summary-steps: 100
-save-steps: 10000
-max-steps: 1000000
-learning-rate: 0.001
+warmup_steps: 1024
+batch_size: 256
+summary_steps: 100
+save_steps: 10000
+max_steps: 1000000
+learning_rate: 0.001
 seed: 123
 # regularization: 0.0001
+eval_episode_frequency: 20
+eval_episodes: 2

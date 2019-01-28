@@ -51,3 +51,17 @@ def episode_mean(value, done, name = None):
         )
 
         return ep_mean, update
+
+# @tf.function
+def huber_loss(labels, predictions, delta=1.0):
+    a = predictions - labels
+
+    loss = tf.where(
+        tf.abs(a) <= delta,
+        0.5 * tf.square(a),
+         delta * tf.abs(a) - 0.5 * delta ** 2
+    )
+
+    loss = tf.reduce_mean(loss)
+    
+    return loss
