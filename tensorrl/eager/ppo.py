@@ -121,12 +121,13 @@ class DQN(object):
 
         with summary_writer.as_default():
             while optimizer.iterations < max_steps:
+
                 for _ in range(env_cycles):
                     state = np.expand_dims(state, axis = 0)
-                    predictions = model(state, training = False)
+                    actions_probs, _Vs = model(state, training = False)
 
 
-                    action = policy.select_action(q_values = predictions[0].numpy())
+                    action = policy.select_action(actions_probs[0].numpy())
                     state1, reward, terminal, _info = env.step(action)
                     memory.append(state, action, reward, terminal)
                     episode_length += 1
@@ -160,16 +161,19 @@ class DQN(object):
 
                         experiences = memory.sample(batch_size)
 
-                        state_batch, action_batch, reward_batch, state1_batch, terminal_batch = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
+                        state, action, reward, state1, terminal = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
 
-                        state_batch = state_batch.astype(np.float32)
-                        state1_batch = state1_batch.astype(np.float32)
+                        state = state.astype(np.float32)
+                        state1 = state1.astype(np.float32)
 
-                        target_q_values = target_model(state1_batch, training = False)
+                        target_action_probs, _ = target_model(state, training = False)
+                        _, _ = target_model(state1, training = False)
 
                         with tf.GradientTape() as tape:
-                            model_q_values = model(state_batch, training = True)
-                            loss = loss_fn(reward_batch, action_batch, terminal_batch, model_q_values, target_q_values)
+                            action_probs, Vs = model(state, training = True)
+                            _, Vs1 = model(state, training = True)
+
+                            loss = loss_fn(reward, action, terminal, model_q_values, target_q_values)
 
                         gradients = tape.gradient(loss, model_variables)
                         gradients = zip(gradients, model_variables)
