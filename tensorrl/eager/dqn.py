@@ -3,11 +3,12 @@ import numpy as np
 from tensorrl import utils
 from rl.policy import EpsGreedyQPolicy, GreedyQPolicy
 from rl.memory import SequentialMemory
+from tensorrl.memory import ReplayMemory
 import os
 import time
 import cv2
 from tensorflow.python.ops import summary_ops_v2
-from . import utils
+from . import utils as eager_utils
 
 
 def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
@@ -55,7 +56,7 @@ class DQN(object):
         env, 
         max_steps = 10000, 
         policy = EpsGreedyQPolicy(),
-        memory = SequentialMemory(limit = 1000, window_length=1),
+        memory = ReplayMemory(max_size = 1000),
         target_model_update = 10000,
         gamma = 0.99,
         warmup_steps = None,
@@ -128,7 +129,13 @@ class DQN(object):
 
                     action = policy.select_action(q_values = predictions[0].numpy())
                     state1, reward, terminal, _info = env.step(action)
-                    memory.append(state, action, reward, terminal)
+                    memory.append(
+                        state = state, 
+                        action = action, 
+                        reward = reward,
+                        state1 = state1, 
+                        terminal = terminal,
+                    )
                     episode_length += 1
                     episode_reward += reward
 
@@ -155,21 +162,16 @@ class DQN(object):
                 # train cycles
                 #################
 
-                if memory.nb_entries > min_memory:
+                if memory.size > min_memory:
                     for _ in range(train_cycles):
 
-                        experiences = memory.sample(batch_size)
+                        batch = memory.sample(batch_size)
 
-                        state_batch, action_batch, reward_batch, state1_batch, terminal_batch = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
-
-                        state_batch = state_batch.astype(np.float32)
-                        state1_batch = state1_batch.astype(np.float32)
-
-                        target_q_values = target_model(state1_batch, training = False)
+                        target_q_values = target_model(batch["state1"], training = False)
 
                         with tf.GradientTape() as tape:
-                            model_q_values = model(state_batch, training = True)
-                            loss = loss_fn(reward_batch, action_batch, terminal_batch, model_q_values, target_q_values)
+                            model_q_values = model(batch["state"], training = True)
+                            loss = loss_fn(batch["reward"], batch["action"], batch["terminal"], model_q_values, target_q_values)
 
                         gradients = tape.gradient(loss, model_variables)
                         gradients = zip(gradients, model_variables)
@@ -196,7 +198,7 @@ class DQN(object):
 
                         # update weights
                         if target_model_update >= 1 and tf.equal(optimizer.iterations % target_model_update,  0):
-                            utils.update_target_weights_hard(target_variables, model_variables)
+                            eager_utils.update_target_weights_hard(target_variables, model_variables)
                         else:
-                            utils.update_target_weights_soft(target_variables, model_variables, target_model_update)
+                            eager_utils.update_target_weights_soft(target_variables, model_variables, target_model_update)
                 

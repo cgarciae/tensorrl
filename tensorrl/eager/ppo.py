@@ -3,11 +3,12 @@ import numpy as np
 from tensorrl import utils
 from rl.policy import EpsGreedyQPolicy, GreedyQPolicy
 from rl.memory import SequentialMemory
+from tensorrl.memory import ReplayMemory
 import os
 import time
 import cv2
 from tensorflow.python.ops import summary_ops_v2
-from . import utils
+from . import utils as eager_utils
 
 
 def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
@@ -26,26 +27,20 @@ def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
             image_index += 1
             state = np.expand_dims(state, axis = 0)
             q_values = model(state, training = False)
-            action = policy.select_action(q_values = q_values[0].numpy())
+            action = policy.select_action(q_values[0].numpy())
             state, reward, terminal, _info = env.step(action)
 
             if visualize:
                 image_path = os.path.join(episode_path, f"{int(time.time() * 10000)}.jpg")
                 image = env.render(mode="rgb_array")[..., ::-1]
                 cv2.imwrite(image_path, image)
-                
 
             total_reward[ep] += reward
         
     return np.mean(total_reward)
 
-
-        
-
 class DQN(object):
-
     def __init__(self, model_fn, model_dir, params = {}):
-
         self.model_fn = model_fn
         self.model_dir = model_dir
         self.params = params
@@ -55,7 +50,7 @@ class DQN(object):
         env, 
         max_steps = 10000, 
         policy = EpsGreedyQPolicy(),
-        memory = SequentialMemory(limit = 1000, window_length=1),
+        memory = ReplayMemory(max_size = 1000),
         target_model_update = 10000,
         gamma = 0.99,
         warmup_steps = None,
@@ -80,8 +75,8 @@ class DQN(object):
             env.seed(seed)
 
         
-        model: tf.keras.Model = self.model_fn()
-        target_model: tf.keras.Model = self.model_fn()
+        model = self.model_fn()
+        target_model = self.model_fn()
 
         # maybe load_weights
         if os.path.exists(self.model_dir):
@@ -91,6 +86,7 @@ class DQN(object):
             target_model.load_weights(
                 filepath = os.path.join(self.model_dir, "target_model"),
             )
+        
         model_variables = model.variables
         target_variables = target_model.variables
 
@@ -121,15 +117,27 @@ class DQN(object):
 
         with summary_writer.as_default():
             while optimizer.iterations < max_steps:
-
                 for _ in range(env_cycles):
                     state = np.expand_dims(state, axis = 0)
-                    actions_probs, _Vs = model(state, training = False)
+                    probs, state_value = model(state, training = False)
+                    target_probs, _state_value = target_model(state, training = False)
 
-
-                    action = policy.select_action(actions_probs[0].numpy())
+                    action = policy.select_action(probs[0].numpy())
                     state1, reward, terminal, _info = env.step(action)
-                    memory.append(state, action, reward, terminal)
+
+                    _probs, state_value1 = model(state1, training = False)
+
+                    memory.append(
+                        state = state,
+                        action = action,
+                        reward = reward,
+                        state1 = state1,
+                        terminal = terminal,
+                        probs = probs,
+                        target_probs = target_probs,
+                        state_value = state_value,
+                        state_value1 = state_value1,
+                    )
                     episode_length += 1
                     episode_reward += reward
 
@@ -156,24 +164,15 @@ class DQN(object):
                 # train cycles
                 #################
 
-                if memory.nb_entries > min_memory:
+                if memory.size > min_memory:
                     for _ in range(train_cycles):
 
-                        experiences = memory.sample(batch_size)
-
-                        state, action, reward, state1, terminal = [ np.asarray(x).squeeze() for x in zip(*experiences) ]
-
-                        state = state.astype(np.float32)
-                        state1 = state1.astype(np.float32)
-
-                        target_action_probs, _ = target_model(state, training = False)
-                        _, _ = target_model(state1, training = False)
+                        batch = memory.sample(batch_size)
+                        target_q_values = target_model(batch["state1"], training = False)
 
                         with tf.GradientTape() as tape:
-                            action_probs, Vs = model(state, training = True)
-                            _, Vs1 = model(state, training = True)
-
-                            loss = loss_fn(reward, action, terminal, model_q_values, target_q_values)
+                            model_q_values = model(batch["state"], training = True)
+                            loss = loss_fn(batch["reward"], batch["action"], batch["terminal"], model_q_values, target_q_values)
 
                         gradients = tape.gradient(loss, model_variables)
                         gradients = zip(gradients, model_variables)
@@ -200,7 +199,8 @@ class DQN(object):
 
                         # update weights
                         if target_model_update >= 1 and tf.equal(optimizer.iterations % target_model_update,  0):
-                            utils.update_target_weights_hard(target_variables, model_variables)
+                            eager_utils.update_target_weights_hard(target_variables, model_variables)
                         else:
-                            utils.update_target_weights_soft(target_variables, model_variables, target_model_update)
+                            eager_utils.update_target_weights_soft(target_variables, model_variables, target_model_update)
                 
+                    memory.reset()

@@ -12,7 +12,7 @@ from rl.memory import SequentialMemory
 
 PARAMS = dict(
     memory_limit = 100000,
-    target_model_update = 0.02,
+    target_model_update = 0.001,
     gamma = 0.99,
     warmup_steps = 40,
     batch_size = 16,
@@ -64,9 +64,8 @@ class API:
             env,
             max_steps = params.max_steps,
             policy = MaxBoltzmannQPolicy(eps=0.2),
-            memory = SequentialMemory(
-                limit = params.memory_limit,
-                window_length = 1,
+            memory = trl.memory.ReplayMemory(
+                max_size = params.memory_limit,
             ),
             target_model_update = params.target_model_update,
             gamma = params.gamma,
