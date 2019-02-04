@@ -49,7 +49,7 @@ def main():
 @main.command("train")
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
-@click_options_config("examples/cartpole_offline_dqn.yml", "params")
+@click_options_config("examples/dqn/cartpole_offline_dqn.yml", "params")
 def train(model_dir, visualize, params):
     print(params)
 
@@ -87,7 +87,7 @@ def train(model_dir, visualize, params):
 @main.command("eval")
 @click.option("--model-dir", required = True)
 @click.option("-v", "--visualize", is_flag = True)
-@click_options_config("examples/cartpole_offline_dqn.yml", "params")
+@click_options_config("examples/dqn/cartpole_offline_dqn.yml", "params")
 def eval(model_dir, visualize, params):
     print(params)
 

@@ -26,8 +26,8 @@ def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
         while not terminal:
             image_index += 1
             state = np.expand_dims(state, axis = 0)
-            q_values = model(state, training = False)
-            action = policy.select_action(q_values[0].numpy())
+            model_probs, _ = model(state, training = False)
+            action = policy.select_action(model_probs[0].numpy())
             state, reward, terminal, _info = env.step(action)
 
             if visualize:
@@ -39,7 +39,7 @@ def play_episodes(model_dir, env, model, policy, visualize, episodes = 1):
         
     return np.mean(total_reward)
 
-class DQN(object):
+class PPO(object):
     def __init__(self, model_fn, model_dir, params = {}):
         self.model_fn = model_fn
         self.model_dir = model_dir
@@ -67,6 +67,7 @@ class DQN(object):
         eval_episode_frequency = None,
         eval_episodes = 1,
         checkpoint_steps = 100,
+        epsilon = 0.2,
         ):
 
         if seed is not None:
@@ -94,21 +95,44 @@ class DQN(object):
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.params.learning_rate)
         min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
 
-        def loss_fn(rewards, actions, terminal, model_q_values, target_q_values):
-        
+        def loss_fn(
+            state,
+            action,
+            reward,
+            state1,
+            terminal,
+            model_probs,
+            target_probs,
+            critic_value,
+            critic_value1,
+            target_critic_value1,
+        ):
             not_terminal = 1.0 - tf.cast(terminal, tf.float32)
 
-            if double_dqn:
-                model_actions = tf.argmax(model_q_values, axis=1, output_type=tf.int32)
-                target_action_values = utils.select_columns(target_q_values, model_actions)
-            else:
-                target_action_values = tf.reduce_max(target_q_values, axis=1)
+            # critic loss
+            target_values = reward + gamma * target_critic_value1 * not_terminal
+            critic_loss = utils.huber_loss(target_values, critic_value, delta = huber_delta)
 
-            target_values = rewards + gamma * target_action_values * not_terminal
-            model_action_values = utils.select_columns(model_q_values, actions)
-            loss = utils.huber_loss(target_values, model_action_values, delta = huber_delta)
+            # actor loss
+            advantage = tf.stop_gradient(
+                reward + gamma * critic_value1 * not_terminal - critic_value
+            )
+            advantage = (advantage - tf.reduce_mean(advantage)) / tf.math.reduce_std(advantage)
 
-            return loss
+            model_action_prob = utils.select_columns(model_probs, action)
+            target_action_prob = utils.select_columns(target_probs, action)
+            rt = model_action_prob / target_action_prob
+
+            actor_loss = -1.0 * tf.minimum(
+                rt * advantage,
+                advantage * tf.clip_by_value(
+                    rt,
+                    1.0 - epsilon,
+                    1.0 + epsilon,
+                )
+            )
+
+            return actor_loss + critic_loss
         
         episode = 0
         episode_length = 0
@@ -119,13 +143,10 @@ class DQN(object):
             while optimizer.iterations < max_steps:
                 for _ in range(env_cycles):
                     state = np.expand_dims(state, axis = 0)
-                    probs, state_value = model(state, training = False)
-                    target_probs, _state_value = target_model(state, training = False)
+                    model_probs, _critic_value = model(state, training = False)
 
-                    action = policy.select_action(probs[0].numpy())
+                    action = policy.select_action(model_probs[0].numpy())
                     state1, reward, terminal, _info = env.step(action)
-
-                    _probs, state_value1 = model(state1, training = False)
 
                     memory.append(
                         state = state,
@@ -133,10 +154,6 @@ class DQN(object):
                         reward = reward,
                         state1 = state1,
                         terminal = terminal,
-                        probs = probs,
-                        target_probs = target_probs,
-                        state_value = state_value,
-                        state_value1 = state_value1,
                     )
                     episode_length += 1
                     episode_reward += reward
@@ -164,15 +181,18 @@ class DQN(object):
                 # train cycles
                 #################
 
-                if memory.size > min_memory:
+                if memory.size == batch_size:
                     for _ in range(train_cycles):
 
                         batch = memory.sample(batch_size)
-                        target_q_values = target_model(batch["state1"], training = False)
+
+                        _, batch["critic_value1"] = model(batch["state1"], training = False)
+                        batch["target_probs"], target_model_values = target_model(batch["state"], training = False)
+                        _, batch["target_critic_value1"] = target_model(batch["state1"], training = False)
 
                         with tf.GradientTape() as tape:
-                            model_q_values = model(batch["state"], training = True)
-                            loss = loss_fn(batch["reward"], batch["action"], batch["terminal"], model_q_values, target_q_values)
+                            batch["model_probs"], batch["critic_value"] = model(batch["state"], training = True)
+                            loss = loss_fn(**batch)
 
                         gradients = tape.gradient(loss, model_variables)
                         gradients = zip(gradients, model_variables)
@@ -193,7 +213,7 @@ class DQN(object):
                         # summaries
                         summary_ops_v2.scalar(
                             "mean_target",
-                            tf.reduce_mean(target_q_values),
+                            tf.reduce_mean(target_model_values),
                             step = optimizer.iterations,
                         )
 

@@ -99,18 +99,18 @@ class DQN(object):
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.params.learning_rate)
         min_memory = max(warmup_steps, batch_size) if warmup_steps is not None else batch_size
 
-        def loss_fn(rewards, actions, terminal, model_q_values, target_q_values):
+        def loss_fn(reward, action, terminal, model_values, target_values, **other):
         
             not_terminal = 1.0 - tf.cast(terminal, tf.float32)
 
             if double_dqn:
-                model_actions = tf.argmax(model_q_values, axis=1, output_type=tf.int32)
-                target_action_values = utils.select_columns(target_q_values, model_actions)
+                model_actions = tf.argmax(model_values, axis=1, output_type=tf.int32)
+                target_action_values = utils.select_columns(target_values, model_actions)
             else:
-                target_action_values = tf.reduce_max(target_q_values, axis=1)
+                target_action_values = tf.reduce_max(target_values, axis=1)
 
-            target_values = rewards + gamma * target_action_values * not_terminal
-            model_action_values = utils.select_columns(model_q_values, actions)
+            target_values = reward + gamma * target_action_values * not_terminal
+            model_action_values = utils.select_columns(model_values, action)
             loss = utils.huber_loss(target_values, model_action_values, delta = huber_delta)
 
             return loss
@@ -127,7 +127,7 @@ class DQN(object):
                     predictions = model(state, training = False)
 
 
-                    action = policy.select_action(q_values = predictions[0].numpy())
+                    action = policy.select_action(predictions[0].numpy())
                     state1, reward, terminal, _info = env.step(action)
                     memory.append(
                         state = state, 
@@ -167,11 +167,11 @@ class DQN(object):
 
                         batch = memory.sample(batch_size)
 
-                        target_q_values = target_model(batch["state1"], training = False)
+                        batch["target_values"] = target_model(batch["state1"], training = False)
 
                         with tf.GradientTape() as tape:
-                            model_q_values = model(batch["state"], training = True)
-                            loss = loss_fn(batch["reward"], batch["action"], batch["terminal"], model_q_values, target_q_values)
+                            batch["model_values"] = model(batch["state"], training = True)
+                            loss = loss_fn(**batch)
 
                         gradients = tape.gradient(loss, model_variables)
                         gradients = zip(gradients, model_variables)
@@ -192,7 +192,7 @@ class DQN(object):
                         # summaries
                         summary_ops_v2.scalar(
                             "mean_target",
-                            tf.reduce_mean(target_q_values),
+                            tf.reduce_mean(batch["target_values"]),
                             step = optimizer.iterations,
                         )
 

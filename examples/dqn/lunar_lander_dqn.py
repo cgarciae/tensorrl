@@ -10,15 +10,29 @@ import numpy as np
 from rl.policy import EpsGreedyQPolicy, BoltzmannQPolicy, MaxBoltzmannQPolicy, GreedyQPolicy
 from rl.memory import SequentialMemory
 
+PARAMS = dict(
+    memory_limit = 100000,
+    target_model_update = 0.001,
+    gamma = 0.99,
+    warmup_steps = 40,
+    batch_size = 16,
+    summary_steps = 100,
+    save_steps = 10000,
+    max_steps = 1000000,
+    learning_rate = 0.001,
+    seed = 123,
+    eval_episode_frequency = 20,
+    eval_episodes = 2,
+)
 
 def model_fn(params):
 
     model = tf.keras.Sequential([
-        tf.keras.layers.InputLayer(input_shape = [4]),
-        tf.keras.layers.Dense(32, activation = tf.nn.relu),
-        tf.keras.layers.Dense(32, activation = tf.nn.relu),
-        tf.keras.layers.Dense(32, activation = tf.nn.relu),
-        tf.keras.layers.Dense(2, use_bias = False),
+        tf.keras.layers.InputLayer(input_shape = [8]),
+        tf.keras.layers.Dense(80, activation = tf.nn.relu),
+        tf.keras.layers.Dense(40, activation = tf.nn.relu),
+        # tf.keras.layers.Dense(256, activation = tf.nn.relu),
+        tf.keras.layers.Dense(4, use_bias = False),
     ])
 
     return model
@@ -26,7 +40,7 @@ def model_fn(params):
 
 class API:
 
-    @do.fire_options("examples/cartpole_dqn.yml", "params")
+    @do.fire_options(PARAMS, "params")
     def train(
         self, 
         model_dir,
@@ -37,11 +51,8 @@ class API:
 
         print(params)
 
-        env = gym.make('CartPole-v1')
-        env._max_episode_steps = 2000
-
-        np.random.seed(params.seed)
-        env.seed(params.seed)
+        env = gym.make('LunarLander-v2')
+        env._max_episode_steps = 1000
 
         agent = trl.eager.DQN(
             lambda: model_fn(params), 
@@ -52,10 +63,9 @@ class API:
         agent.train(
             env,
             max_steps = params.max_steps,
-            policy = MaxBoltzmannQPolicy(eps=0.9),
-            memory = SequentialMemory(
-                limit = params.memory_limit,
-                window_length = 1,
+            policy = MaxBoltzmannQPolicy(eps=0.2),
+            memory = trl.memory.ReplayMemory(
+                max_size = params.memory_limit,
             ),
             target_model_update = params.target_model_update,
             gamma = params.gamma,
@@ -66,14 +76,14 @@ class API:
             visualize = visualize,
             visualize_eval = visualize_eval,
             seed = params.seed,
-            double_dqn = True,
+            double_dqn = False,
             eval_episode_frequency = params.eval_episode_frequency,
             eval_episodes = params.eval_episodes,
         )
 
 
 
-    @do.fire_options("examples/cartpole_dqn.yml", "params")
+    @do.fire_options("examples/dqn/cartpole_dqn.yml", "params")
     def eval(
         self, 
         model_dir, 
